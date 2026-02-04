@@ -72,6 +72,7 @@ ros-jazzy-robp-autocomplete = { path = "src/robp_autocomplete" }
 ros-jazzy-robp-boot-camp-launch = { path = "src/robp_boot_camp_launch" }
 ros-jazzy-robp-interfaces = { path = "src/robp_interfaces" }
 ros-jazzy-robp-launch = { path = "src/robp_launch" }
+ros-jazzy-driver = { path = "src/driver" }
 
 # Boot camp
 ros-jazzy-learning-tf2-py = { path = "src/learning_tf2_py" }
@@ -81,6 +82,8 @@ ros-jazzy-detection = { path = "src/detection" }
 
 # Other
 argcomplete = ">=3.6.3,<4"
+colcon-common-extensions = ">=0.3.0,<0.4"
+pynput = ">=1.8.1,<2"
 
 [target.linux-64.dependencies]
 # ROS
