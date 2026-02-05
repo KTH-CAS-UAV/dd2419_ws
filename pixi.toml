@@ -23,6 +23,8 @@ arm_camera = { cmd = "ros2 launch robp_launch arm_camera_launch.yaml" }
 lidar = { cmd = "ros2 launch robp_launch lidar_launch.yaml" }
 phidgets = { cmd = "ros2 launch robp_launch phidgets_launch.yaml" }
 realsense = { cmd = "ros2 launch robp_launch realsense_launch.yaml" }
+driver = { cmd = "ros2 run driver driver" }
+odometry = { cmd = "ros2 run odometry odometry" }
 
 [tasks.install_udev_rules]
 cmd = '''
