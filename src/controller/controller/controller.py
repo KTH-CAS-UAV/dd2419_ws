@@ -51,7 +51,7 @@ class Controller(Node):
         self._k_v = 0.6
 
         # Tolerances
-        self._xy_tol = 0.05
+        self._xy_tol = 0.1
         self._yaw_tol = 0.25
         self._yaw_turn_thresh = 0.35
 
