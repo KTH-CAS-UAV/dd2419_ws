@@ -10,6 +10,7 @@ echo $ROS_DOMAIN_ID
 1. Make sure you don’t have a configuration that only allows access to localhost. I had to detele something from my bashrc file (a variable set to =localhost).
 2. Connect with ssh to robot. Make sure it is the right ip
 
+run without pixi run:
 ```bash
 ssh group3@{ip}
 ssh group3@10.97.32.242
