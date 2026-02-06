@@ -664,11 +664,15 @@ environments:
         build: hb0f4dca_0
       - conda: src/aruco_ros/aruco_ros
         build: hb0f4dca_0
+      - conda: src/controller
+        build: hb0f4dca_0
       - conda: src/detection
         build: hb0f4dca_0
       - conda: src/display_markers
         build: hb0f4dca_0
       - conda: src/driver
+        build: hb0f4dca_0
+      - conda: src/goal_manager
         build: hb0f4dca_0
       - conda: src/learning_tf2_py
         build: hb0f4dca_0
@@ -1253,11 +1257,15 @@ environments:
         build: h60d57d3_0
       - conda: src/aruco_ros/aruco_ros
         build: h60d57d3_0
+      - conda: src/controller
+        build: h60d57d3_0
       - conda: src/detection
         build: h60d57d3_0
       - conda: src/display_markers
         build: h60d57d3_0
       - conda: src/driver
+        build: h60d57d3_0
+      - conda: src/goal_manager
         build: h60d57d3_0
       - conda: src/learning_tf2_py
         build: h60d57d3_0
@@ -1800,11 +1808,15 @@ environments:
         build: ha41a7fa_0
       - conda: src/aruco_ros/aruco_ros
         build: ha41a7fa_0
+      - conda: src/controller
+        build: ha41a7fa_0
       - conda: src/detection
         build: ha41a7fa_0
       - conda: src/display_markers
         build: ha41a7fa_0
       - conda: src/driver
+        build: ha41a7fa_0
+      - conda: src/goal_manager
         build: ha41a7fa_0
       - conda: src/learning_tf2_py
         build: ha41a7fa_0
@@ -13477,6 +13489,51 @@ packages:
   license: Apache-2.0 OR BSD-3-Clause
   size: 24760
   timestamp: 1768982354996
+- conda: src/controller
+  name: ros-jazzy-controller
+  version: 0.0.0
+  build: h60d57d3_0
+  subdir: osx-arm64
+  variants:
+    target_platform: osx-arm64
+  depends:
+  - ros2-distro-mutex >=0.13,<0.14
+  - ros2-distro-mutex >=0.13.0,<0.14.0a0
+  - libcxx >=21
+  - python_abi 3.12.* *_cp312
+  - numpy >=1.23,<3
+- conda: src/controller
+  name: ros-jazzy-controller
+  version: 0.0.0
+  build: ha41a7fa_0
+  subdir: win-64
+  variants:
+    c_compiler: vs2022
+    cxx_compiler: vs2022
+    target_platform: win-64
+  depends:
+  - ros2-distro-mutex >=0.13,<0.14
+  - ros2-distro-mutex >=0.13.0,<0.14.0a0
+  - vc >=14.3,<15
+  - vc14_runtime >=14.44.35208
+  - ucrt >=10.0.20348.0
+  - python_abi 3.12.* *_cp312
+  - numpy >=1.23,<3
+- conda: src/controller
+  name: ros-jazzy-controller
+  version: 0.0.0
+  build: hb0f4dca_0
+  subdir: linux-64
+  variants:
+    target_platform: linux-64
+  depends:
+  - ros2-distro-mutex >=0.13,<0.14
+  - ros2-distro-mutex >=0.13.0,<0.14.0a0
+  - libgcc >=15
+  - libgcc >=15
+  - libstdcxx >=15
+  - python_abi 3.12.* *_cp312
+  - numpy >=1.23,<3
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-cv-bridge-4.1.0-np2py312hedab9cf_14.conda
   sha256: 551ccbead41183f97bec73fe334852ffaf445f953a2cc180bca864579f593170
   md5: 2235f3c9d944bc3b2d8915996b425ff8
@@ -14375,6 +14432,51 @@ packages:
   license: BSD-3-Clause
   size: 120912
   timestamp: 1768975221906
+- conda: src/goal_manager
+  name: ros-jazzy-goal-manager
+  version: 0.0.0
+  build: h60d57d3_0
+  subdir: osx-arm64
+  variants:
+    target_platform: osx-arm64
+  depends:
+  - ros2-distro-mutex >=0.13,<0.14
+  - ros2-distro-mutex >=0.13.0,<0.14.0a0
+  - libcxx >=21
+  - python_abi 3.12.* *_cp312
+  - numpy >=1.23,<3
+- conda: src/goal_manager
+  name: ros-jazzy-goal-manager
+  version: 0.0.0
+  build: ha41a7fa_0
+  subdir: win-64
+  variants:
+    c_compiler: vs2022
+    cxx_compiler: vs2022
+    target_platform: win-64
+  depends:
+  - ros2-distro-mutex >=0.13,<0.14
+  - ros2-distro-mutex >=0.13.0,<0.14.0a0
+  - vc >=14.3,<15
+  - vc14_runtime >=14.44.35208
+  - ucrt >=10.0.20348.0
+  - python_abi 3.12.* *_cp312
+  - numpy >=1.23,<3
+- conda: src/goal_manager
+  name: ros-jazzy-goal-manager
+  version: 0.0.0
+  build: hb0f4dca_0
+  subdir: linux-64
+  variants:
+    target_platform: linux-64
+  depends:
+  - ros2-distro-mutex >=0.13,<0.14
+  - ros2-distro-mutex >=0.13.0,<0.14.0a0
+  - libgcc >=15
+  - libgcc >=15
+  - libstdcxx >=15
+  - python_abi 3.12.* *_cp312
+  - numpy >=1.23,<3
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-gtest-vendor-1.14.9000-np2py312h2ed9cc7_14.conda
   sha256: 2f85954cfa7f6412fa66bd8b8eeef7a26153773155c30ff5281f9db20f7009b5
   md5: 6d62ac403f26154961e0efcf164bf02a

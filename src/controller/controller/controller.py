@@ -47,16 +47,16 @@ class Controller(Node):
 
         # Minimal tuning (duty cycles)
         self._max_duty = 0.25
-        self._k_w = 1.2
+        self._k_w = 0.4
         self._k_v = 0.6
 
         # Tolerances
-        self._xy_tol = 0.10
+        self._xy_tol = 0.05
         self._yaw_tol = 0.25
         self._yaw_turn_thresh = 0.35
 
         # Control loop
-        self._timer = self.create_timer(0.05, self.control_tick)  # 20 Hz
+        self._timer = self.create_timer(0.1, self.control_tick)  # 20 Hz
 
     def goal_callback(self, msg: PoseStamped):
         self._goal = msg
