@@ -51,7 +51,7 @@ class Odometry(Node):
         """
         ticks_per_rev = 48 * 64
         wheel_radius = 0.04921 # TODO: Fill in
-        base = 0.31 # TODO: Fill in
+        base = 0.3075 # TODO: Fill in
 
         # Ticks since last message
         delta_ticks_left = msg.delta_encoder_left
@@ -81,7 +81,7 @@ class Odometry(Node):
         y -- y coordinate of the 2D pose
         yaw -- yaw of the 2D pose (in radians)
         """
-        self.get_logger().info(f'entered broadcast transform')
+        # self.get_logger().info(f'entered broadcast transform')
         t = TransformStamped()
         t.header.stamp = stamp
         t.header.frame_id = 'odom'
