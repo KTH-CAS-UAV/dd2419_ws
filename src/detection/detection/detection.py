@@ -27,6 +27,8 @@ class Detection(Node):
         self.create_subscription(
             PointCloud2, '/realsense/depth/color/points', self.cloud_callback, 10)
         
+        self.thresh = self.get_thresholds()
+        
 
 
     def cloud_callback(self, msg: PointCloud2):
@@ -43,45 +45,47 @@ class Detection(Node):
         # Convert ROS -> NumPy
         gen = pc2.read_points_numpy(msg, skip_nans=True)
         points = gen[:, :3]
-        colors = np.empty(points.shape, dtype=np.uint32)
+        rgb_uint32 = gen[:, 3].view(np.uint32)
+        colors = np.empty((len(rgb_uint32), 3), dtype=np.uint8)
+        colors[:, 0] = (rgb_uint32 >> 16) & 255
+        colors[:, 1] = (rgb_uint32 >> 8) & 255
+        colors[:, 2] = rgb_uint32 & 255
 
-        for idx, x in enumerate(gen):
-            c = x[3]
-            s = struct.pack('>f', c)
-            i = struct.unpack('>l', s)[0]
-            pack = ctypes.c_uint32(i).value
-            colors[idx, 0] = np.asarray((pack >> 16) & 255, dtype=np.uint8)
-            colors[idx, 1] = np.asarray((pack >> 8) & 255, dtype=np.uint8)
-            colors[idx, 2] = np.asarray(pack & 255, dtype=np.uint8)
+        # geometrical filter
+        max_dist = 1.5
+        max_height = 0.05   
+        geom_mask = (points[:,2] < max_dist) & (points[:,1] > max_height) # check if this has to be [:,0] or [:,1]
 
-        colors_rgb = colors.astype(np.float32) / 255
+        # the cleanest solution is to filter the points in the odom/map frame this should be implemented in the future
+        # also it should be checked if the 
+
+        points_f = points[geom_mask]
+        colors_f = colors[geom_mask]
+
+        # conversion of color spaces from rgb to oklab
+        colors_rgb = colors_f.astype(np.float32) / 255
         colors_xyz = co.sRGB_to_XYZ(colors_rgb)
         colors_oklab = co.XYZ_to_Oklab(colors_xyz)
-        self.get_logger().info(f'comp_colors_oklab.shape: {colors_oklab.shape}')
+
+        # self.get_logger().info(f'comp_colors_oklab.shape: {colors_oklab.shape}')
+        # self.get_logger().info(f'geom_mask ones: {np.sum(geom_mask)}')
         
-        # add distance filtering to avoid noise!
-        geom_mask = (points[:,2] < 1) & (points[:,1] > -0.05)# check if this has to be [:,0] or [:,1]
-        self.get_logger().info(f'geom_mask ones: {np.sum(geom_mask)}')
-        thresh = self.get_thresholds()
+        # assembling of color masks
         red_mask = (
-            (thresh[0, 0] < colors_oklab[:, 1]) & (colors_oklab[:, 1] < thresh[0, 1]) & 
-            (thresh[0, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < thresh[0, 3]) & 
-            geom_mask
+            (self.thresh[0, 0] < colors_oklab[:, 1]) & (colors_oklab[:, 1] < self.thresh[0, 1]) & 
+            (self.thresh[0, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < self.thresh[0, 3]) 
         )
         green_mask = (
-            (thresh[1, 0] < colors_oklab[:, 1]) & (colors_oklab[:, 1] < thresh[1, 1]) & 
-            (thresh[1, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < thresh[1, 3]) & 
-            geom_mask
+            (self.thresh[1, 0] < colors_oklab[:, 1]) & (colors_oklab[:, 1] < self.thresh[1, 1]) & 
+            (self.thresh[1, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < self.thresh[1, 3]) 
         )
         blue_mask = (
-            (thresh[2, 0] < colors_oklab[:, 1]) & (colors_oklab[:, 1] < thresh[2, 1]) & 
-            (thresh[2, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < thresh[2, 3]) & 
-            geom_mask
+            (self.thresh[2, 0] < colors_oklab[:, 1]) & (colors_oklab[:, 1] < self.thresh[2, 1]) & 
+            (self.thresh[2, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < self.thresh[2, 3]) 
         )
         wood_mask = (
-            (thresh[3, 0] < colors_oklab[:, 1]) & (colors_oklab[:, 1] < thresh[3, 1]) & 
-            (thresh[3, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < thresh[3, 3]) & 
-            geom_mask
+            (self.thresh[3, 0] < colors_oklab[:, 1]) & (colors_oklab[:, 1] < self.thresh[3, 1]) & 
+            (self.thresh[3, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < self.thresh[3, 3]) 
         )
 
         # hsv color scale  TODO look into that or ok lab, that is daniels favourite
@@ -93,27 +97,27 @@ class Detection(Node):
 
         if red_counter > 10: 
             self.get_logger().info(f'red sphere detected \n red_counter = {red_counter}')
-            red_points = points[red_mask]
+            red_points = points_f[red_mask]
             msg_red = pc2.create_cloud_xyz32(msg.header,red_points.astype(float))
             self._pub.publish(msg_red)
 
-        # if green_counter > 10: 
-        #     self.get_logger().info(f'green cube detected')
-        #     green_points = points[green_mask]
-        #     msg_green = pc2.create_cloud_xyz32(msg.header,green_points.astype(float))
-        #     self._pub.publish(msg_green)
+        if green_counter > 10: 
+            self.get_logger().info(f'green cube detected')
+            green_points = points_f[green_mask]
+            msg_green = pc2.create_cloud_xyz32(msg.header,green_points.astype(float))
+            self._pub.publish(msg_green)
 
-        # if blue_counter > 10: 
-        #     self.get_logger().info(f'red sphere detected')
-        #     red_points = points[red_mask]
-        #     msg_red = pc2.create_cloud_xyz32(msg.header,red_points.astype(float))
-        #     self._pub.publish(msg_red)
+        if blue_counter > 10: 
+            self.get_logger().info(f'blue sphere detected')
+            blue_points = points_f[blue_mask]
+            msg_red = pc2.create_cloud_xyz32(msg.header,blue_points.astype(float))
+            self._pub.publish(msg_red)
 
-        # if wood_counter > 10: 
-        #     self.get_logger().info(f'green cube detected')
-        #     green_points = points[green_mask]
-        #     msg_green = pc2.create_cloud_xyz32(msg.header,green_points.astype(float))
-        #     self._pub.publish(msg_green)
+        if wood_counter > 10: 
+            self.get_logger().info(f'wood cube detected')
+            wood_points = points_f[wood_mask]
+            msg_green = pc2.create_cloud_xyz32(msg.header,wood_points.astype(float))
+            self._pub.publish(msg_green)
     
     def get_thresholds(self):
         comp_colors_rgb = np.array([
@@ -132,33 +136,37 @@ class Detection(Node):
         #  green: [ 0.58387405 -0.10329892 -0.00694187]
         #  blue [ 0.63563073 -0.08929985 -0.07248441]
         #  wood[ 0.67719286  0.01391608  0.03818419]
-
+        
         comp_colors_rgb = comp_colors_rgb / 255.0
         comp_colors_xyz = co.sRGB_to_XYZ(comp_colors_rgb)
         comp_colors_oklab = co.XYZ_to_Oklab(comp_colors_xyz)
         self.get_logger().info(f'comp_colors_oklab\n red: {comp_colors_oklab[0,:]} \n green: {comp_colors_oklab[1,:]}\n blue {comp_colors_oklab[2,:]}\n wood{comp_colors_oklab[3,:]}')
         
-        tol = 0.1
+        tol_red = 0.02
+        tol_green = 0.01
+        tol_blue = 0.015
+        tol_wood = 0.01
 
-        thresh_red_a_low = comp_colors_oklab[0,1] - tol
-        thresh_red_a_high = comp_colors_oklab[0,1] + tol
-        thresh_red_b_low = comp_colors_oklab[0,2] - tol
-        thresh_red_b_high = comp_colors_oklab[0,2] + tol
+        thresh_red_a_low = comp_colors_oklab[0,1] - tol_red
+        thresh_red_a_high = comp_colors_oklab[0,1] + tol_red
+        thresh_red_b_low = comp_colors_oklab[0,2] - tol_red
+        thresh_red_b_high = comp_colors_oklab[0,2] + tol_red
 
-        thresh_green_a_low = comp_colors_oklab[1,1] - tol
-        thresh_green_a_high = comp_colors_oklab[1,1] + tol
-        thresh_green_b_low = comp_colors_oklab[1,2] - tol
-        thresh_green_b_high = comp_colors_oklab[1,2] + tol
+        thresh_green_a_low = comp_colors_oklab[1,1] - tol_green
+        thresh_green_a_high = comp_colors_oklab[1,1] + tol_green
+        thresh_green_b_low = comp_colors_oklab[1,2] - tol_green
+        thresh_green_b_high = comp_colors_oklab[1,2] + tol_green
 
-        thresh_blue_a_low = comp_colors_oklab[2,1] - tol
-        thresh_blue_a_high = comp_colors_oklab[2,1] + tol
-        thresh_blue_b_low = comp_colors_oklab[2,2] - tol
-        thresh_blue_b_high = comp_colors_oklab[2,2] + tol
+        thresh_blue_a_low = comp_colors_oklab[2,1] - tol_blue
+        thresh_blue_a_high = comp_colors_oklab[2,1] + tol_blue
+        thresh_blue_b_low = comp_colors_oklab[2,2] - tol_blue
+        thresh_blue_b_high = comp_colors_oklab[2,2] + tol_blue
 
-        thresh_wood_a_low = comp_colors_oklab[3,1] - tol
-        thresh_wood_a_high = comp_colors_oklab[3,1] + tol
-        thresh_wood_b_low = comp_colors_oklab[3,2] - tol
-        thresh_wood_b_high = comp_colors_oklab[3,2] + tol
+        thresh_wood_a_low = comp_colors_oklab[3,1] - tol_wood
+        thresh_wood_a_high = comp_colors_oklab[3,1] + tol_wood
+        thresh_wood_b_low = comp_colors_oklab[3,2] - tol_wood
+        thresh_wood_b_high = comp_colors_oklab[3,2] + tol_wood
+
         thresh = np.array([[thresh_red_a_low,thresh_red_a_high,thresh_red_b_low, thresh_red_b_high],
                          [thresh_green_a_low,thresh_green_a_high,thresh_green_b_low, thresh_green_b_high],
                          [thresh_blue_a_low,thresh_blue_a_high,thresh_blue_b_low, thresh_blue_b_high],
