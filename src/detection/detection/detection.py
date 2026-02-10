@@ -52,12 +52,13 @@ class Detection(Node):
         colors[:, 2] = rgb_uint32 & 255
 
         # geometrical filter
-        max_dist = 1.5
+        max_dist = 2
         max_height = 0.05   
-        geom_mask = (points[:,2] < max_dist) & (points[:,1] > max_height) # check if this has to be [:,0] or [:,1]
-
+        min_height = 0.08
+        geom_mask = ((points[:,2] < max_dist) & (points[:,1] > max_height) & (points[:,1] < min_height))
         # the cleanest solution is to filter the points in the odom/map frame this should be implemented in the future
         # also it should be checked if the 
+        # TODO filter out the floor as well!
 
         points_f = points[geom_mask]
         colors_f = colors[geom_mask]
@@ -88,60 +89,54 @@ class Detection(Node):
             (self.thresh[3, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < self.thresh[3, 3]) 
         )
 
-        # hsv color scale  TODO look into that or ok lab, that is daniels favourite
+        # Chek how many red,green,... points we have
         red_counter = np.sum(red_mask)
         green_counter = np.sum(green_mask)
         blue_counter = np.sum(blue_mask)
         wood_counter = np.sum(wood_mask)
-        self.get_logger().info(f'red_mask ones: {red_counter}')
 
-        if red_counter > 10: 
+        # apply mask, create pointcloud and publish message if counter>min_num_points
+        min_num_points = 4
+        if red_counter > min_num_points: 
             self.get_logger().info(f'red sphere detected \n red_counter = {red_counter}')
             red_points = points_f[red_mask]
             msg_red = pc2.create_cloud_xyz32(msg.header,red_points.astype(float))
             self._pub.publish(msg_red)
 
-        if green_counter > 10: 
+        if green_counter > min_num_points: 
             self.get_logger().info(f'green cube detected')
             green_points = points_f[green_mask]
             msg_green = pc2.create_cloud_xyz32(msg.header,green_points.astype(float))
             self._pub.publish(msg_green)
 
-        if blue_counter > 10: 
+        if blue_counter > min_num_points: 
             self.get_logger().info(f'blue sphere detected')
             blue_points = points_f[blue_mask]
             msg_red = pc2.create_cloud_xyz32(msg.header,blue_points.astype(float))
             self._pub.publish(msg_red)
 
-        if wood_counter > 10: 
+        if wood_counter > min_num_points: 
             self.get_logger().info(f'wood cube detected')
             wood_points = points_f[wood_mask]
             msg_green = pc2.create_cloud_xyz32(msg.header,wood_points.astype(float))
             self._pub.publish(msg_green)
     
+
     def get_thresholds(self):
+
         comp_colors_rgb = np.array([
             [140, 45, 35], #red
             [0, 70, 57], #green
             [0, 83, 125], # blue
             [100, 75, 52] #wood
             ])
-        # comparison rgb values measured: 
-        # red: 137 55 50  | 145 37 17
-        # green: 0 72  58 | 1 67 56 
-        # blue: 1 90 134 | 2 76 117
-        # wood: 111 77 49 | 90 73 54
-
-        # comp_colors_oklab red: [ 0.64356247  0.08838131  0.05120019] 
-        #  green: [ 0.58387405 -0.10329892 -0.00694187]
-        #  blue [ 0.63563073 -0.08929985 -0.07248441]
-        #  wood[ 0.67719286  0.01391608  0.03818419]
-        
+                
         comp_colors_rgb = comp_colors_rgb / 255.0
         comp_colors_xyz = co.sRGB_to_XYZ(comp_colors_rgb)
         comp_colors_oklab = co.XYZ_to_Oklab(comp_colors_xyz)
         self.get_logger().info(f'comp_colors_oklab\n red: {comp_colors_oklab[0,:]} \n green: {comp_colors_oklab[1,:]}\n blue {comp_colors_oklab[2,:]}\n wood{comp_colors_oklab[3,:]}')
         
+        # define tolerances
         tol_red = 0.02
         tol_green = 0.01
         tol_blue = 0.015
