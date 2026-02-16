@@ -5,10 +5,12 @@ import math
 import numpy as np
 import colour as co
 import rclpy
+import time
 from rclpy.node import Node
 
 from sensor_msgs.msg import PointCloud2
 import sensor_msgs_py.point_cloud2 as pc2
+from sensor_msgs.msg import PointField
 
 import ctypes
 import struct
@@ -43,6 +45,8 @@ class Detection(Node):
         run 'ros2 interface show sensor_msgs/msg/PointCloud2' in a terminal.
         """
         # Convert ROS -> NumPy
+        # start_time = time.time()
+
         gen = pc2.read_points_numpy(msg, skip_nans=True)
         points = gen[:, :3]
         rgb_uint32 = gen[:, 3].view(np.uint32)
@@ -97,29 +101,49 @@ class Detection(Node):
 
         # apply mask, create pointcloud and publish message if counter>min_num_points
         min_num_points = 4
+        
+        fields = [
+        PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+        PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+        PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
+        PointField(name='color_idx', offset=12, datatype=PointField.FLOAT32, count=1)
+    ]
         if red_counter > min_num_points: 
-            self.get_logger().info(f'red sphere detected \n red_counter = {red_counter}')
+            # self.get_logger().info(f'red sphere detected \n red_counter = {red_counter}')
             red_points = points_f[red_mask]
-            msg_red = pc2.create_cloud_xyz32(msg.header,red_points.astype(float))
+            red_color_idx = np.full((red_points.shape[0], 1), 1.0, dtype=np.float32)  # add color index as 4th coloumn (1 for red, 2 for green, 3 for blue, 4 for wood)
+            red_points_with_idx = np.column_stack((red_points, red_color_idx))
+            # msg_red = pc2.create_cloud_xyz32(msg.header,red_points_with_idx.astype(float))
+            msg_red = pc2.create_cloud(msg.header,fields,red_points_with_idx)
             self._pub.publish(msg_red)
 
         if green_counter > min_num_points: 
-            self.get_logger().info(f'green cube detected')
+            # self.get_logger().info(f'green cube detected')
             green_points = points_f[green_mask]
-            msg_green = pc2.create_cloud_xyz32(msg.header,green_points.astype(float))
+            green_color_idx = np.full((green_points.shape[0], 1), 2.0, dtype=np.float32)  # add color index as 4th coloumn (1 for red, 2 for green, 3 for blue, 4 for wood)
+            green_points_with_idx = np.column_stack((green_points, green_color_idx))
+            msg_green = pc2.create_cloud(msg.header, fields, green_points_with_idx)
             self._pub.publish(msg_green)
 
         if blue_counter > min_num_points: 
-            self.get_logger().info(f'blue sphere detected')
+            # self.get_logger().info(f'blue sphere detected')
             blue_points = points_f[blue_mask]
-            msg_red = pc2.create_cloud_xyz32(msg.header,blue_points.astype(float))
-            self._pub.publish(msg_red)
+            blue_color_idx = np.full((blue_points.shape[0], 1), 3.0, dtype=np.float32)  # add color index as 4th coloumn (1 for red, 2 for green, 3 for blue, 4 for wood)
+            blue_points_with_idx = np.column_stack((blue_points, blue_color_idx))
+            msg_blue = pc2.create_cloud(msg.header, fields, blue_points_with_idx)
+            self._pub.publish(msg_blue)
 
         if wood_counter > min_num_points: 
-            self.get_logger().info(f'wood cube detected')
+            # self.get_logger().info(f'wood cube detected')
             wood_points = points_f[wood_mask]
-            msg_green = pc2.create_cloud_xyz32(msg.header,wood_points.astype(float))
-            self._pub.publish(msg_green)
+            wood_color_idx = np.full((wood_points.shape[0], 1), 4.0, dtype=np.float32)  # add color index as 4th coloumn (1 for red, 2 for green, 3 for blue, 4 for wood)
+            wood_points_with_idx = np.column_stack((wood_points, wood_color_idx))
+            msg_wood = pc2.create_cloud(msg.header, fields, wood_points_with_idx)
+            self._pub.publish(msg_wood)
+
+        # dt = time.time() - start_time
+        # self.get_logger().info(f"Callback took: {dt*1000:.2f} ms")
+        
     
 
     def get_thresholds(self):
