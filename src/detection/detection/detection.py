@@ -43,12 +43,12 @@ class Detection(Node):
         self.thresh = self.get_thresholds()
 
         # initialize clustering parameters
-        self.min_samples = 10 # min number of samples to be considered one object
-        self.eps = 0.03 # ponints within this distance to each other are considered one object
+        self.min_samples = 5 # min number of samples to be considered one object
+        self.eps = 0.02 # ponints within this distance to each other are considered one object
         self.dbscan = DBSCAN(eps=self.eps, min_samples=self.min_samples)
         self.obj_width = 0.03  # meters
         self.obj_width = 0.03 # meters
-        self.tolerance = 0.01    # +/- 3cm tolerance
+        self.tolerance = 0.03    # +/- 3cm tolerance
 
         # initialize TF
         self.tf_buffer = Buffer()
@@ -79,7 +79,7 @@ class Detection(Node):
         # geometrical filter
         max_dist = 2
         max_height = 0.05   
-        min_height = 0.075
+        min_height = 0.08
         geom_mask = ((points[:,2] < max_dist) & (points[:,1] > max_height) & (points[:,1] < min_height))
         # the cleanest solution is to filter the points in the odom/map frame this should be implemented in the future
         # also it should be checked if the 
@@ -124,6 +124,7 @@ class Detection(Node):
             if len(self.point_buffers['red'])>=self.buffer_size:
                 all_red_points = np.vstack(self.point_buffers['red'])
                 red_centroids = self.process_clusters(all_red_points)
+                self.get_logger().info(f'red: {len(all_red_points)}')
 
                 # only for visualization in rviz
                 msg_red = pc2.create_cloud(centroid_header, fields, all_red_points)
@@ -142,6 +143,7 @@ class Detection(Node):
             if len(self.point_buffers['green'])>=self.buffer_size:
                 all_green_points = np.vstack(self.point_buffers['green'])
                 green_centroids = self.process_clusters(all_green_points)
+                self.get_logger().info(f'green: {len(all_green_points)}')
 
                 # only for visualization in rviz
                 msg_green = pc2.create_cloud(centroid_header, fields, all_green_points)
@@ -160,6 +162,7 @@ class Detection(Node):
             if len(self.point_buffers['blue'])>=self.buffer_size:
                 all_blue_points = np.vstack(self.point_buffers['blue'])
                 blue_centroids = self.process_clusters(all_blue_points)
+                self.get_logger().info(f'blue: {len(all_blue_points)}')
 
                 # only for visualization in rviz
                 msg_blue = pc2.create_cloud(centroid_header, fields, all_blue_points)
@@ -178,6 +181,7 @@ class Detection(Node):
             if len(self.point_buffers['wood'])>=self.buffer_size:
                 all_wood_points = np.vstack(self.point_buffers['wood'])
                 wood_centroids = self.process_clusters(all_wood_points)
+                self.get_logger().info(f'wood: {len(all_wood_points)}')
 
                 # only for visualization in rviz
                 msg_wood = pc2.create_cloud(centroid_header, fields, all_wood_points)
@@ -239,19 +243,23 @@ class Detection(Node):
         # assembling of color masks
         red_mask = (
             (self.thresh[0, 0] < colors_oklab[:, 1]) & (colors_oklab[:, 1] < self.thresh[0, 1]) & 
-            (self.thresh[0, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < self.thresh[0, 3]) 
+            (self.thresh[0, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < self.thresh[0, 3]) & 
+            (self.thresh[0, 4] < colors_oklab[:, 0]) & (colors_oklab[:, 0] < self.thresh[0, 5])
         )
         green_mask = (
             (self.thresh[1, 0] < colors_oklab[:, 1]) & (colors_oklab[:, 1] < self.thresh[1, 1]) & 
-            (self.thresh[1, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < self.thresh[1, 3]) 
+            (self.thresh[1, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < self.thresh[1, 3]) & 
+            (self.thresh[1, 4] < colors_oklab[:, 0]) & (colors_oklab[:, 0] < self.thresh[1, 5])
         )
         blue_mask = (
             (self.thresh[2, 0] < colors_oklab[:, 1]) & (colors_oklab[:, 1] < self.thresh[2, 1]) & 
-            (self.thresh[2, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < self.thresh[2, 3]) 
+            (self.thresh[2, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < self.thresh[2, 3]) & 
+            (self.thresh[2, 4] < colors_oklab[:, 0]) & (colors_oklab[:, 0] < self.thresh[2, 5])
         )
         wood_mask = (
             (self.thresh[3, 0] < colors_oklab[:, 1]) & (colors_oklab[:, 1] < self.thresh[3, 1]) & 
-            (self.thresh[3, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < self.thresh[3, 3]) 
+            (self.thresh[3, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < self.thresh[3, 3]) & 
+            (self.thresh[3, 4] < colors_oklab[:, 0]) & (colors_oklab[:, 0] < self.thresh[3, 5])
         )
 
         return red_mask, green_mask, blue_mask, wood_mask
@@ -346,30 +354,47 @@ class Detection(Node):
         tol_blue = 0.015
         tol_wood = 0.01
 
+        # thresh_red_L_low = comp_colors_oklab[0,0] - 0.15
+        # thresh_red_L_high = comp_colors_oklab[0,0] + 0.15
+        thresh_red_L_low = 0.0
+        thresh_red_L_high = 1.0
         thresh_red_a_low = comp_colors_oklab[0,1] - tol_red
         thresh_red_a_high = comp_colors_oklab[0,1] + tol_red
         thresh_red_b_low = comp_colors_oklab[0,2] - tol_red
         thresh_red_b_high = comp_colors_oklab[0,2] + tol_red
 
+        # thresh_green_L_low = comp_colors_oklab[1,0] - 0.25
+        # thresh_green_L_high = comp_colors_oklab[1,0] + 0.25
+        thresh_green_L_low = 0.0
+        thresh_green_L_high = 1.0
         thresh_green_a_low = comp_colors_oklab[1,1] - tol_green
         thresh_green_a_high = comp_colors_oklab[1,1] + tol_green
         thresh_green_b_low = comp_colors_oklab[1,2] - tol_green
         thresh_green_b_high = comp_colors_oklab[1,2] + tol_green
 
+        # thresh_blue_L_low = comp_colors_oklab[2,0] - 0.15
+        # thresh_blue_L_high = comp_colors_oklab[2,0] + 0.15
+        thresh_blue_L_low = 0.0
+        thresh_blue_L_high = 1.0
         thresh_blue_a_low = comp_colors_oklab[2,1] - tol_blue
         thresh_blue_a_high = comp_colors_oklab[2,1] + tol_blue
         thresh_blue_b_low = comp_colors_oklab[2,2] - tol_blue
         thresh_blue_b_high = comp_colors_oklab[2,2] + tol_blue
 
+        # thresh_wood_L_low = comp_colors_oklab[3,0] - 0.02
+        # thresh_wood_L_high = comp_colors_oklab[3,0] + 0.02
+        thresh_wood_L_low = 0.0
+        thresh_wood_L_high = 1.0
         thresh_wood_a_low = comp_colors_oklab[3,1] - tol_wood
         thresh_wood_a_high = comp_colors_oklab[3,1] + tol_wood
         thresh_wood_b_low = comp_colors_oklab[3,2] - tol_wood
         thresh_wood_b_high = comp_colors_oklab[3,2] + tol_wood
 
-        thresh = np.array([[thresh_red_a_low,thresh_red_a_high,thresh_red_b_low, thresh_red_b_high],
-                         [thresh_green_a_low,thresh_green_a_high,thresh_green_b_low, thresh_green_b_high],
-                         [thresh_blue_a_low,thresh_blue_a_high,thresh_blue_b_low, thresh_blue_b_high],
-                         [thresh_wood_a_low,thresh_wood_a_high,thresh_wood_b_low, thresh_wood_b_high]])
+        thresh = np.array([[thresh_red_a_low,thresh_red_a_high,thresh_red_b_low, thresh_red_b_high, thresh_red_L_low, thresh_red_L_high],
+                         [thresh_green_a_low,thresh_green_a_high,thresh_green_b_low, thresh_green_b_high, thresh_green_L_low, thresh_green_L_high],
+                         [thresh_blue_a_low,thresh_blue_a_high,thresh_blue_b_low, thresh_blue_b_high, thresh_blue_L_low, thresh_blue_L_high],
+                         [thresh_wood_a_low,thresh_wood_a_high,thresh_wood_b_low, thresh_wood_b_high, thresh_wood_L_low, thresh_wood_L_high]])
+        
         return thresh
 
 
