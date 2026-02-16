@@ -8,7 +8,6 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
 
 from geometry_msgs.msg import Point, TransformStamped, PolygonStamped
-from visualization_msgs.msg import Marker
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
 
@@ -143,7 +142,7 @@ class WorkspaceAndFrames(Node):
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
             history=HistoryPolicy.KEEP_LAST,
-            depth=1,
+            depth=1,    
         )
         self.polygon_pub = self.create_publisher(PolygonStamped, self.workspace_polygon_topic, qos)
 
