@@ -8,9 +8,15 @@ from rclpy.node import Node
 from sklearn.cluster import DBSCAN
 
 from sensor_msgs.msg import PointCloud2
+from std_msgs.msg import Header
 import sensor_msgs_py.point_cloud2 as pc2
 from sensor_msgs.msg import PointField
 from geometry_msgs.msg import PointStamped
+from tf2_ros import Buffer, TransformListener
+import tf2_geometry_msgs # Required for transform_points
+from scipy.spatial.transform import Rotation
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.callback_groups import ReentrantCallbackGroup
 
 import ctypes
 import struct
@@ -23,25 +29,35 @@ class Detection(Node):
 
         # Initialize the publisher
         self._pub = self.create_publisher(
-            PointCloud2, '/camera/depth/color/ds_points', 10)
+            PointCloud2, '/camera/depth/color/ds_points', 10, callback_group=ReentrantCallbackGroup())
         
-        self.centroid_pub = self.create_publisher(PointStamped, '/detection/objects',10)
+        self.red_centroid_pub = self.create_publisher(PointStamped, '/detection/objects/red_cube', 10, callback_group=ReentrantCallbackGroup())
+        self.green_centroid_pub = self.create_publisher(PointStamped, '/detection/objects/green_cube', 10, callback_group=ReentrantCallbackGroup())
+        self.blue_centroid_pub = self.create_publisher(PointStamped, '/detection/objects/blue_cube', 10, callback_group=ReentrantCallbackGroup())
+        self.wood_centroid_pub = self.create_publisher(PointStamped, '/detection/objects/wood_cube', 10, callback_group=ReentrantCallbackGroup())
 
         # Subscribe to point cloud topic and call callback function on each received message
         self.create_subscription(
-            PointCloud2, '/realsense/depth/color/points', self.cloud_callback, 10)
+            PointCloud2, '/realsense/depth/color/points', self.cloud_callback, 10, callback_group=ReentrantCallbackGroup())
         
         self.thresh = self.get_thresholds()
 
-        self.min_samples = 5 # min number of samples to be considered one object
+        # initialize clustering parameters
+        self.min_samples = 10 # min number of samples to be considered one object
         self.eps = 0.03 # ponints within this distance to each other are considered one object
         self.dbscan = DBSCAN(eps=self.eps, min_samples=self.min_samples)
-        # Define your known object size (e.g., a 10cm cube)
         self.obj_width = 0.03  # meters
         self.obj_width = 0.03 # meters
         self.tolerance = 0.01    # +/- 3cm tolerance
 
-        
+        # initialize TF
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+
+        # initialize point buffering
+        self.point_buffers = {'red': [], 'green':[], 'blue': [], 'wood':[]}
+        self.buffer_size = 6 # number of pointclouds we buffer before performing the clustering
+
 
 
     def cloud_callback(self, msg: PointCloud2):
@@ -52,7 +68,6 @@ class Detection(Node):
 
         # TODO for the future, if it becomes a bottleneck: merge the messages into onemessage that is published
         # this is for sure cleaner since we currently have to handle multiple messages at the same time if we detect multiple things at the same time
-        self.get_logger().info(f'msg.header.frame_id = {msg.header.frame_id}')
         gen = pc2.read_points_numpy(msg, skip_nans=True)
         points = gen[:, :3]
         rgb_uint32 = gen[:, 3].view(np.uint32)
@@ -64,7 +79,7 @@ class Detection(Node):
         # geometrical filter
         max_dist = 2
         max_height = 0.05   
-        min_height = 0.08
+        min_height = 0.075
         geom_mask = ((points[:,2] < max_dist) & (points[:,1] > max_height) & (points[:,1] < min_height))
         # the cleanest solution is to filter the points in the odom/map frame this should be implemented in the future
         # also it should be checked if the 
@@ -73,14 +88,154 @@ class Detection(Node):
         points_f = points[geom_mask]
         colors_f = colors[geom_mask]
 
+        points_map = self.transform_points_to_map(points_f, msg.header)
+
+
+        red_mask, green_mask, blue_mask, wood_mask = self.get_masks(colors_f) # returns the color masks based on threshold values
+
+        # Chek how many red,green,... points we have
+        red_counter = np.sum(red_mask)
+        green_counter = np.sum(green_mask)
+        blue_counter = np.sum(blue_mask)
+        wood_counter = np.sum(wood_mask)
+
+        general_counter = red_counter + green_counter + blue_counter + wood_counter
+
+        if general_counter == 0: return # end callback if we have no hits in general
+
+        
+        fields = [ # only for visualization in rviz, is actually not relevant
+            PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+            PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+            PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
+            ]
+        
+        centroid_header = Header()
+        centroid_header.stamp = msg.header.stamp  #this is a bit sus, since we are buffering the points
+        centroid_header.frame_id = 'map'
+
+        if points_map.shape == points_f.shape:  # this is only the case if the transform_points_to_map actually succeeds
+            
+            # manage red_points
+            if red_counter > 0: # add points to buffer if we have more than a minimum amount of hits
+                red_points = points_map[red_mask]
+                self.point_buffers['red'].append(red_points)
+
+            if len(self.point_buffers['red'])>=self.buffer_size:
+                all_red_points = np.vstack(self.point_buffers['red'])
+                red_centroids = self.process_clusters(all_red_points)
+
+                # only for visualization in rviz
+                msg_red = pc2.create_cloud(centroid_header, fields, all_red_points)
+                self._pub.publish(msg_red)
+
+                for centroid in red_centroids: 
+                    self.publish_detection(centroid, centroid_header, 'red')
+
+                self.point_buffers['red'] = [] # after publishing clear the buffer
+            
+            # manage green_points
+            if green_counter > 0: # add points to buffer if we have more than a minimum amount of hits
+                green_points = points_map[green_mask]
+                self.point_buffers['green'].append(green_points)
+
+            if len(self.point_buffers['green'])>=self.buffer_size:
+                all_green_points = np.vstack(self.point_buffers['green'])
+                green_centroids = self.process_clusters(all_green_points)
+
+                # only for visualization in rviz
+                msg_green = pc2.create_cloud(centroid_header, fields, all_green_points)
+                self._pub.publish(msg_green)
+
+                for centroid in green_centroids: 
+                    self.publish_detection(centroid, centroid_header, 'green')
+                    
+                self.point_buffers['green'] = [] # after publishing clear the buffer
+
+            # manage blue_points
+            if blue_counter > 0: # add points to buffer if we have more than a minimum amount of hits
+                blue_points = points_map[blue_mask]
+                self.point_buffers['blue'].append(blue_points)
+
+            if len(self.point_buffers['blue'])>=self.buffer_size:
+                all_blue_points = np.vstack(self.point_buffers['blue'])
+                blue_centroids = self.process_clusters(all_blue_points)
+
+                # only for visualization in rviz
+                msg_blue = pc2.create_cloud(centroid_header, fields, all_blue_points)
+                self._pub.publish(msg_blue)
+
+                for centroid in blue_centroids: 
+                    self.publish_detection(centroid, centroid_header, 'blue')
+                    
+                self.point_buffers['blue'] = [] # after publishing clear the buffer
+
+            # manage wood_points
+            if wood_counter > 0: # add points to buffer if we have more than a minimum amount of hits
+                wood_points = points_map[wood_mask]
+                self.point_buffers['wood'].append(wood_points)
+
+            if len(self.point_buffers['wood'])>=self.buffer_size:
+                all_wood_points = np.vstack(self.point_buffers['wood'])
+                wood_centroids = self.process_clusters(all_wood_points)
+
+                # only for visualization in rviz
+                msg_wood = pc2.create_cloud(centroid_header, fields, all_wood_points)
+                self._pub.publish(msg_wood)
+
+                for centroid in wood_centroids: 
+                    self.publish_detection(centroid, centroid_header, 'wood')
+                    
+                self.point_buffers['wood'] = [] # after publishing clear the buffer
+            
+
+    def transform_points_to_map(self, points_np, header :Header):
+        """
+        Converts an (N, 3) numpy array of points from camera frame to map frame.
+        """
+        source_frame = header.frame_id
+        target_frame = 'map'
+        stamp = header.stamp
+        if len(points_np) == 0:
+            self.get_logger().warn(f'transform_points_to_map() had an empty point array as input')
+            return np.empty(0,3)
+        
+
+        fields = [
+            PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+            PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+            PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
+            ]
+            
+        # Create the cloud. Note: header.stamp is crucial here!
+        cloud_in = pc2.create_cloud(header, fields, points_np)
+        
+        try: 
+            timeout = rclpy.duration.Duration(seconds=0.3)
+            transform = self.tf_buffer.lookup_transform(target_frame, source_frame, stamp,timeout)
+            translation_vec = np.array([transform.transform.translation.x,transform.transform.translation.y,transform.transform.translation.z])
+            q = transform.transform.rotation
+
+            r = Rotation.from_quat([q.x, q.y, q.z, q.w])
+            points_rotated = r.apply(points_np)
+            
+            # Apply Translation
+            points_map = points_rotated + translation_vec
+            return points_map
+        
+        except Exception as e:
+            self.get_logger().warn(f'Transform failed: {e}')
+            return np.empty((0,3))
+
+
+
+    def get_masks(self, colors):
+        'gets the colors of the points as imput and returns the color masks'
         # conversion of color spaces from rgb to oklab
-        colors_rgb = colors_f.astype(np.float32) / 255
+        colors_rgb = colors.astype(np.float32) / 255
         colors_xyz = co.sRGB_to_XYZ(colors_rgb)
         colors_oklab = co.XYZ_to_Oklab(colors_xyz)
 
-        # self.get_logger().info(f'comp_colors_oklab.shape: {colors_oklab.shape}')
-        # self.get_logger().info(f'geom_mask ones: {np.sum(geom_mask)}')
-        
         # assembling of color masks
         red_mask = (
             (self.thresh[0, 0] < colors_oklab[:, 1]) & (colors_oklab[:, 1] < self.thresh[0, 1]) & 
@@ -99,98 +254,16 @@ class Detection(Node):
             (self.thresh[3, 2] < colors_oklab[:, 2]) & (colors_oklab[:, 2] < self.thresh[3, 3]) 
         )
 
-        # Chek how many red,green,... points we have
-        red_counter = np.sum(red_mask)
-        green_counter = np.sum(green_mask)
-        blue_counter = np.sum(blue_mask)
-        wood_counter = np.sum(wood_mask)
-
-        # apply mask, create pointcloud and publish message if counter>min_num_points
-        min_num_points = self.min_samples
-        
-        fields = [
-            PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
-            PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
-            PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
-            PointField(name='color_idx', offset=12, datatype=PointField.FLOAT32, count=1)
-            ]
-        
-        if red_counter > min_num_points: 
-            # self.get_logger().info(f'red sphere detected \n red_counter = {red_counter}')
-            red_points = points_f[red_mask]
-            red_color_idx = np.full((red_points.shape[0], 1), 1.0, dtype=np.float32)  # add color index as 4th coloumn (1 for red, 2 for green, 3 for blue, 4 for wood)
-            red_points_with_idx = np.column_stack((red_points, red_color_idx))
-            # msg_red = pc2.create_cloud_xyz32(msg.header,red_points_with_idx.astype(float))
-            red_centroid = self.process_clusters(red_points)
-            print(red_centroid)
-            msg_red = pc2.create_cloud(msg.header,fields,red_points_with_idx)
-
-            if len(red_centroid)==1:
-                msg_red_centroid = PointStamped()
-                msg_red_centroid.header = msg.header
-                msg_red_centroid.point.x = float(red_centroid[0][0])
-                msg_red_centroid.point.y = float(red_centroid[0][1])
-                msg_red_centroid.point.z = float(red_centroid[0][2])
-                self.centroid_pub.publish(msg_red_centroid)
-                self.get_logger().info(f'i just published this message: {msg_red_centroid}')
-            elif len(red_centroid)==0:
-                self.get_logger().info(f'clustering red returned an empty list')
-            elif len(red_centroid)>1:
-                self.get_logger().info(f'clustering red returned multiple centroids')
-
-            self._pub.publish(msg_red)
-
-        if green_counter > min_num_points: 
-            # self.get_logger().info(f'green cube detected')
-            green_points = points_f[green_mask]
-            green_color_idx = np.full((green_points.shape[0], 1), 2.0, dtype=np.float32)  # add color index as 4th coloumn (1 for red, 2 for green, 3 for blue, 4 for wood)
-            green_points_with_idx = np.column_stack((green_points, green_color_idx))
-            msg_green = pc2.create_cloud(msg.header, fields, green_points_with_idx)
-            self._pub.publish(msg_green)
-
-        if blue_counter > min_num_points: 
-            # self.get_logger().info(f'blue sphere detected')
-            blue_points = points_f[blue_mask]
-            blue_color_idx = np.full((blue_points.shape[0], 1), 3.0, dtype=np.float32)  # add color index as 4th coloumn (1 for red, 2 for green, 3 for blue, 4 for wood)
-            blue_points_with_idx = np.column_stack((blue_points, blue_color_idx))
-            msg_blue = pc2.create_cloud(msg.header, fields, blue_points_with_idx)
-            self._pub.publish(msg_blue)
-
-        if wood_counter > min_num_points: 
-            # self.get_logger().info(f'wood cube detected')
-            wood_points = points_f[wood_mask]
-            wood_color_idx = np.full((wood_points.shape[0], 1), 4.0, dtype=np.float32)  # add color index as 4th coloumn (1 for red, 2 for green, 3 for blue, 4 for wood)
-            wood_points_with_idx = np.column_stack((wood_points, wood_color_idx))
-            
-            wood_centroid = self.process_clusters(wood_points)
-
-            if len(wood_centroid)==1:
-                msg_wood_centroid = PointStamped()
-                msg_wood_centroid.header = msg.header
-                msg_wood_centroid.point.x = float(wood_centroid[0][0])
-                msg_wood_centroid.point.y = float(wood_centroid[0][1])
-                msg_wood_centroid.point.z = float(wood_centroid[0][2])
-                self.centroid_pub.publish(msg_wood_centroid)
-                self.get_logger().info(f'i just published this message: {msg_wood_centroid}')
-
-            elif len(wood_centroid)==0:
-                self.get_logger().info(f'clustering wood returned an empty list')
-            elif len(wood_centroid)>1:
-                self.get_logger().info(f'clustering wood returned multiple centroids')
-            msg_wood = pc2.create_cloud(msg.header, fields, wood_points_with_idx)
-            self._pub.publish(msg_wood)
-
-
-        # dt = time.time() - start_time
-        # self.get_logger().info(f"Callback took: {dt*1000:.2f} ms")
+        return red_mask, green_mask, blue_mask, wood_mask
     
+
 
     def process_clusters(self, points_3d):
         """
         Input: points_3d (N, 3) numpy array of filtered XYZ coordinates
         Output: List of centroids [x, y, z] for valid objects
         """
-        if len(points_3d) < 10:
+        if len(points_3d) < self.min_samples:  #TODO use thsi parameter as tuning and define it in the __init__
             return []
 
         # 1. Run Clustering (Very fast on <2000 points)
@@ -224,14 +297,34 @@ class Detection(Node):
             # Check 2: Density Check (Optional but recommended)
             # If it's the right size but has only 15 points, it might be a ghost reflection
             # A real solid object should have many points
-            # if len(cluster_points) < 10: 
-            #     continue
+
+            if len(cluster_points) < self.min_samples: 
+                continue
 
             # 4. Calculate Centroid
             centroid = np.mean(cluster_points, axis=0)
             valid_centroids.append(centroid)
 
         return valid_centroids
+    
+
+    def publish_detection(self, centroid, header, color):
+        # ToDo add
+        msg = PointStamped()
+        msg.header = header
+        msg.point.x = centroid[0]
+        msg.point.y = centroid[1]
+        msg.point.z = centroid[2]
+
+        if color == 'red':
+            self.red_centroid_pub.publish(msg)
+        elif color == 'green':
+            self.green_centroid_pub.publish(msg)
+        elif color == 'blue':
+            self.blue_centroid_pub.publish(msg)
+        elif color == 'wood':
+            self.wood_centroid_pub.publish(msg)
+
 
     def get_thresholds(self):
 
@@ -283,8 +376,13 @@ class Detection(Node):
 def main():
     rclpy.init()
     node = Detection()
+
+    ex = MultiThreadedExecutor()
+    ex.add_node(node)
+
     try:
-        rclpy.spin(node)
+        # rclpy.spin(node)
+        ex.spin()
     except KeyboardInterrupt:
         pass
 
