@@ -1,16 +1,16 @@
 #!/usr/bin/env python
-
-import math
-
 import numpy as np
 import colour as co
 import rclpy
 import time
 from rclpy.node import Node
 
+from sklearn.cluster import DBSCAN
+
 from sensor_msgs.msg import PointCloud2
 import sensor_msgs_py.point_cloud2 as pc2
 from sensor_msgs.msg import PointField
+from geometry_msgs.msg import PointStamped
 
 import ctypes
 import struct
@@ -24,29 +24,35 @@ class Detection(Node):
         # Initialize the publisher
         self._pub = self.create_publisher(
             PointCloud2, '/camera/depth/color/ds_points', 10)
+        
+        self.centroid_pub = self.create_publisher(PointStamped, '/detection/objects',10)
 
         # Subscribe to point cloud topic and call callback function on each received message
         self.create_subscription(
             PointCloud2, '/realsense/depth/color/points', self.cloud_callback, 10)
         
         self.thresh = self.get_thresholds()
+
+        self.min_samples = 5 # min number of samples to be considered one object
+        self.eps = 0.03 # ponints within this distance to each other are considered one object
+        self.dbscan = DBSCAN(eps=self.eps, min_samples=self.min_samples)
+        # Define your known object size (e.g., a 10cm cube)
+        self.obj_width = 0.03  # meters
+        self.obj_width = 0.03 # meters
+        self.tolerance = 0.01    # +/- 3cm tolerance
+
         
 
 
     def cloud_callback(self, msg: PointCloud2):
-        """Takes point cloud readings to detect objects.
-
-        This function is called for every message that is published on the '/camera/depth/color/points' topic.
-
-        Your task is to use the point cloud data in 'msg' to detect objects. You are allowed to add/change things outside this function.
-
-        Keyword arguments:
-        msg -- A point cloud ROS message. To see more information about it 
-        run 'ros2 interface show sensor_msgs/msg/PointCloud2' in a terminal.
         """
-        # Convert ROS -> NumPy
-        # start_time = time.time()
+        Takes point cloud readings to detect objects.
+        This function is called for every message that is published on the '/camera/depth/color/points' topic.
+        """
 
+        # TODO for the future, if it becomes a bottleneck: merge the messages into onemessage that is published
+        # this is for sure cleaner since we currently have to handle multiple messages at the same time if we detect multiple things at the same time
+        self.get_logger().info(f'msg.header.frame_id = {msg.header.frame_id}')
         gen = pc2.read_points_numpy(msg, skip_nans=True)
         points = gen[:, :3]
         rgb_uint32 = gen[:, 3].view(np.uint32)
@@ -100,21 +106,38 @@ class Detection(Node):
         wood_counter = np.sum(wood_mask)
 
         # apply mask, create pointcloud and publish message if counter>min_num_points
-        min_num_points = 4
+        min_num_points = self.min_samples
         
         fields = [
-        PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
-        PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
-        PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
-        PointField(name='color_idx', offset=12, datatype=PointField.FLOAT32, count=1)
-    ]
+            PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+            PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+            PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
+            PointField(name='color_idx', offset=12, datatype=PointField.FLOAT32, count=1)
+            ]
+        
         if red_counter > min_num_points: 
             # self.get_logger().info(f'red sphere detected \n red_counter = {red_counter}')
             red_points = points_f[red_mask]
             red_color_idx = np.full((red_points.shape[0], 1), 1.0, dtype=np.float32)  # add color index as 4th coloumn (1 for red, 2 for green, 3 for blue, 4 for wood)
             red_points_with_idx = np.column_stack((red_points, red_color_idx))
             # msg_red = pc2.create_cloud_xyz32(msg.header,red_points_with_idx.astype(float))
+            red_centroid = self.process_clusters(red_points)
+            print(red_centroid)
             msg_red = pc2.create_cloud(msg.header,fields,red_points_with_idx)
+
+            if len(red_centroid)==1:
+                msg_red_centroid = PointStamped()
+                msg_red_centroid.header = msg.header
+                msg_red_centroid.point.x = float(red_centroid[0][0])
+                msg_red_centroid.point.y = float(red_centroid[0][1])
+                msg_red_centroid.point.z = float(red_centroid[0][2])
+                self.centroid_pub.publish(msg_red_centroid)
+                self.get_logger().info(f'i just published this message: {msg_red_centroid}')
+            elif len(red_centroid)==0:
+                self.get_logger().info(f'clustering red returned an empty list')
+            elif len(red_centroid)>1:
+                self.get_logger().info(f'clustering red returned multiple centroids')
+
             self._pub.publish(msg_red)
 
         if green_counter > min_num_points: 
@@ -138,13 +161,77 @@ class Detection(Node):
             wood_points = points_f[wood_mask]
             wood_color_idx = np.full((wood_points.shape[0], 1), 4.0, dtype=np.float32)  # add color index as 4th coloumn (1 for red, 2 for green, 3 for blue, 4 for wood)
             wood_points_with_idx = np.column_stack((wood_points, wood_color_idx))
+            
+            wood_centroid = self.process_clusters(wood_points)
+
+            if len(wood_centroid)==1:
+                msg_wood_centroid = PointStamped()
+                msg_wood_centroid.header = msg.header
+                msg_wood_centroid.point.x = float(wood_centroid[0][0])
+                msg_wood_centroid.point.y = float(wood_centroid[0][1])
+                msg_wood_centroid.point.z = float(wood_centroid[0][2])
+                self.centroid_pub.publish(msg_wood_centroid)
+                self.get_logger().info(f'i just published this message: {msg_wood_centroid}')
+
+            elif len(wood_centroid)==0:
+                self.get_logger().info(f'clustering wood returned an empty list')
+            elif len(wood_centroid)>1:
+                self.get_logger().info(f'clustering wood returned multiple centroids')
             msg_wood = pc2.create_cloud(msg.header, fields, wood_points_with_idx)
             self._pub.publish(msg_wood)
 
+
         # dt = time.time() - start_time
         # self.get_logger().info(f"Callback took: {dt*1000:.2f} ms")
-        
     
+
+    def process_clusters(self, points_3d):
+        """
+        Input: points_3d (N, 3) numpy array of filtered XYZ coordinates
+        Output: List of centroids [x, y, z] for valid objects
+        """
+        if len(points_3d) < 10:
+            return []
+
+        # 1. Run Clustering (Very fast on <2000 points)
+        # Returns labels like [0, 0, 1, -1, 0, 1...] (-1 is noise)
+        labels = self.dbscan.fit_predict(points_3d)
+        
+        valid_centroids = []
+        
+        # Get unique labels (skip -1 which is noise)
+        unique_labels = set(labels)
+        if -1 in unique_labels:
+            unique_labels.remove(-1)
+
+        for label in unique_labels:
+            # 2. Extract Points for this specific cluster
+            # Boolean indexing is fast
+            cluster_mask = (labels == label)
+            cluster_points = points_3d[cluster_mask]
+            
+            # 3. FAST Geometric Check (Axis-Aligned Bounding Box)
+            # We calculate the dimensions of the cluster
+            min_p = np.min(cluster_points, axis=0)
+            max_p = np.max(cluster_points, axis=0)
+            dims = max_p - min_p # [width_x, width_y, height_z]
+            
+            # Check 1: Is the size roughly correct?
+            # You can get more specific (e.g., check X vs Y vs Z) if rotation is known
+            if not (self.obj_width - self.tolerance < np.max(dims) < self.obj_width + self.tolerance):
+                continue # Skip this cluster, it's too big/small
+                
+            # Check 2: Density Check (Optional but recommended)
+            # If it's the right size but has only 15 points, it might be a ghost reflection
+            # A real solid object should have many points
+            # if len(cluster_points) < 10: 
+            #     continue
+
+            # 4. Calculate Centroid
+            centroid = np.mean(cluster_points, axis=0)
+            valid_centroids.append(centroid)
+
+        return valid_centroids
 
     def get_thresholds(self):
 
