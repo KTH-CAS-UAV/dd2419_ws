@@ -56,7 +56,7 @@ class Detection(Node):
 
         # initialize point buffering
         self.point_buffers = {'red': [], 'green':[], 'blue': [], 'wood':[]}
-        self.buffer_size = 6 # number of pointclouds we buffer before performing the clustering
+        self.buffer_size = 3 # number of pointclouds we buffer before performing the clustering
 
 
 
@@ -120,6 +120,9 @@ class Detection(Node):
             if red_counter > 0: # add points to buffer if we have more than a minimum amount of hits
                 red_points = points_map[red_mask]
                 self.point_buffers['red'].append(red_points)
+            
+            if red_counter == 0 and len(self.point_buffers['red'])!= 0 : # clear the buffer if we dont see points in consecutive scans
+                self.point_buffers['red'] = [] 
 
             if len(self.point_buffers['red'])>=self.buffer_size:
                 all_red_points = np.vstack(self.point_buffers['red'])
@@ -140,6 +143,9 @@ class Detection(Node):
                 green_points = points_map[green_mask]
                 self.point_buffers['green'].append(green_points)
 
+            if green_counter == 0 and len(self.point_buffers['green'])!= 0 : # clear the buffer if we dont see points in consecutive scans
+                self.point_buffers['green'] = [] 
+
             if len(self.point_buffers['green'])>=self.buffer_size:
                 all_green_points = np.vstack(self.point_buffers['green'])
                 green_centroids = self.process_clusters(all_green_points)
@@ -159,6 +165,9 @@ class Detection(Node):
                 blue_points = points_map[blue_mask]
                 self.point_buffers['blue'].append(blue_points)
 
+            if blue_counter == 0 and len(self.point_buffers['blue'])!= 0 : # clear the buffer if we dont see points in consecutive scans
+                self.point_buffers['blue'] = [] 
+
             if len(self.point_buffers['blue'])>=self.buffer_size:
                 all_blue_points = np.vstack(self.point_buffers['blue'])
                 blue_centroids = self.process_clusters(all_blue_points)
@@ -177,6 +186,9 @@ class Detection(Node):
             if wood_counter > 0: # add points to buffer if we have more than a minimum amount of hits
                 wood_points = points_map[wood_mask]
                 self.point_buffers['wood'].append(wood_points)
+
+            if wood_counter == 0 and len(self.point_buffers['wood'])!= 0 : # clear the buffer if we dont see points in consecutive scans
+                self.point_buffers['wood'] = [] 
 
             if len(self.point_buffers['wood'])>=self.buffer_size:
                 all_wood_points = np.vstack(self.point_buffers['wood'])
@@ -211,8 +223,6 @@ class Detection(Node):
             PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
             ]
             
-        # Create the cloud. Note: header.stamp is crucial here!
-        cloud_in = pc2.create_cloud(header, fields, points_np)
         
         try: 
             timeout = rclpy.duration.Duration(seconds=0.3)
