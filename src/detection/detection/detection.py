@@ -58,6 +58,9 @@ class Detection(Node):
         self.point_buffers = {'red': [], 'green':[], 'blue': [], 'wood':[]}
         self.buffer_size = 3 # number of pointclouds we buffer before performing the clustering
 
+        # False Positive protection
+        self.max_general_counter = 1500 # if we have more hits than this, we will abort the detection
+
 
 
     def cloud_callback(self, msg: PointCloud2):
@@ -102,6 +105,9 @@ class Detection(Node):
         general_counter = red_counter + green_counter + blue_counter + wood_counter
 
         if general_counter == 0: return # end callback if we have no hits in general
+        elif general_counter >= self.max_general_counter: 
+            self.get_logger().info(f'many hits by color thresholding, danger of false positives, detection iteration aborted')
+            return
 
         
         fields = [ # only for visualization in rviz, is actually not relevant
