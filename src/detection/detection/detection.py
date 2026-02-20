@@ -40,6 +40,7 @@ class Detection(Node):
         self.create_subscription(
             PointCloud2, '/realsense/depth/color/points', self.cloud_callback, 10, callback_group=ReentrantCallbackGroup())
         
+        # get thresholds during initialization
         self.thresh = self.get_thresholds()
 
         # initialize clustering parameters
@@ -59,7 +60,7 @@ class Detection(Node):
         self.buffer_size = 3 # number of pointclouds we buffer before performing the clustering
 
         # False Positive protection
-        self.max_general_counter = 1500 # if we have more hits than this, we will abort the detection
+        self.max_general_counter = 200 # if we have more hits than this, we will abort the detection, since we probably have false positives
 
 
 
@@ -86,14 +87,14 @@ class Detection(Node):
         geom_mask = ((points[:,2] < max_dist) & (points[:,1] > max_height) & (points[:,1] < min_height))
         # the cleanest solution is to filter the points in the odom/map frame this should be implemented in the future
         # also it should be checked if the 
-        # TODO filter out the floor as well!
 
         points_f = points[geom_mask]
         colors_f = colors[geom_mask]
 
+        # transform points to map coordinates
         points_map = self.transform_points_to_map(points_f, msg.header)
 
-
+        # apply the tresholds to the points and return the filter masks
         red_mask, green_mask, blue_mask, wood_mask = self.get_masks(colors_f) # returns the color masks based on threshold values
 
         # Chek how many red,green,... points we have
@@ -104,12 +105,18 @@ class Detection(Node):
 
         general_counter = red_counter + green_counter + blue_counter + wood_counter
 
-        if general_counter == 0: return # end callback if we have no hits in general
+        # end callback if we have no hits in general
+        if general_counter == 0: return 
+        
+        # end callback if we detect too many colorful points (because it is likely that there are a lot of false positives)
         elif general_counter >= self.max_general_counter: 
             self.get_logger().info(f'many hits by color thresholding, danger of false positives, detection iteration aborted')
+            self.point_buffers['red'] = []
+            self.point_buffers['green'] = []
+            self.point_buffers['blue'] = []
+            self.point_buffers['wood'] = []
             return
 
-        
         fields = [ # only for visualization in rviz, is actually not relevant
             PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
             PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
@@ -205,8 +212,8 @@ class Detection(Node):
                 msg_wood = pc2.create_cloud(centroid_header, fields, all_wood_points)
                 self._pub.publish(msg_wood)
 
-                # for centroid in wood_centroids:     # so that marius can experiment with it i will uncomment this line 
-                    #self.publish_detection(centroid, centroid_header, 'wood')
+                for centroid in wood_centroids:     # so that marius can experiment with it i will uncomment this line 
+                    self.publish_detection(centroid, centroid_header, 'wood')
                     
                 self.point_buffers['wood'] = [] # after publishing clear the buffer
             
