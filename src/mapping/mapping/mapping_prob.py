@@ -39,6 +39,12 @@ class Mapping(Node):
         # Filter params
         self.median_filter_kernel_size = 5
 
+        # Log-odds params
+        self.log_odds_increse_occ = 0.85
+        self.log_odds_decrease_free = -0.4
+        self.log_odds_min = -5
+        self.log_odds_max = 5
+
         
         # --------------------------------------------------
 
@@ -73,7 +79,7 @@ class Mapping(Node):
         self.is_turning = False
 
         # Grid
-        self.grid = OcupancyGridData(self.grid_size, self.grid_resolution, self.grid_origin)
+        self.grid = OcupancyGridData(self.grid_size, self.grid_resolution, self.grid_origin, self.log_odds_increse_occ, self.log_odds_decrease_free, self.log_odds_min, self.log_odds_max)
 
         # Publish init grid
         occupancy_grid_msg = OccupancyGrid()
@@ -202,7 +208,7 @@ if __name__ == '__main__':
 
 
 class OcupancyGridData:
-    def __init__(self, size, resolution, origin):
+    def __init__(self, size, resolution, origin, l_occ=0.85, l_free=-0.4, l_min=-5, l_max=5):
         self.size = size
         self.resolution = resolution
         self.width = int(size // resolution)
@@ -213,12 +219,10 @@ class OcupancyGridData:
         self.log_odds = np.zeros((self.height, self.width), dtype=np.float32)
 
         # Parameters
-        self.l_occ = 0.85    # log odds increase for occupied
-        self.l_free = -0.4   # log odds decrease for free
-        # self.l_occ = 0.6    # log odds increase for occupied
-        # self.l_free = -0.7   # log odds decrease for free
-        self.l_min = -5
-        self.l_max = 5
+        self.l_occ = l_occ    # log odds increase for occupied
+        self.l_free = l_free   # log odds decrease for free
+        self.l_min = l_min
+        self.l_max = l_max
 
     def world_to_grid(self, x, y):
         x_index = int((x - self.origin[0]) // self.resolution)
