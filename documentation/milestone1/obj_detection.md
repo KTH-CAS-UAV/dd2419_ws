@@ -17,7 +17,7 @@ sshpass -p 'group3' ssh group3@10.28.211.242
 
 __Record rosbag:__
 ```bash
-pixi run ros2 bag record -o obj_detection /phidgets/motor/encoders /realsense/depth/color/points /realsense/depth/image_rect_raw /realsense/color/image_raw/compressed /realsense/color/image_raw
+pixi run ros2 bag record -o obj_detection /phidgets/motor/encoders /realsense/depth/color/points /realsense/color/image_raw/compressed /phidgets/imu/data_raw /nav/is_turning /lidar/scan
 ```
 
 __Some words about the Code:__
