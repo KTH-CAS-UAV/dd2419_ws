@@ -33,12 +33,12 @@ class Detection(Node):
 
         ### DECLARE PARAMETERS ###          
         # Clustering & Detection params
-        self.declare_parameter("min_samples", 5)
-        self.declare_parameter("eps", 0.02)
+        self.declare_parameter("min_samples", 10)
+        self.declare_parameter("eps", 0.03)
         self.declare_parameter("obj_width", 0.03)
         self.declare_parameter("tolerance", 0.03)
         self.declare_parameter("buffer_size", 3)
-        self.declare_parameter("max_general_counter", 200)
+        self.declare_parameter("max_general_counter", 3000)
         self.declare_parameter("obstacle_distance_m", 0.15)
         self.declare_parameter("occupancy_threshold", 51) # threshold used for occupancy grid check
 
@@ -299,7 +299,6 @@ class Detection(Node):
         except Exception as e:
             self.get_logger().warn(f'Transform failed: {e}')
             return np.empty((0,3))
-        
 
     def get_masks(self, colors):
         'gets the colors of the points as imput and returns the color masks'
