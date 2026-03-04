@@ -36,8 +36,8 @@ class Detection(Node):
         self.declare_parameter("min_samples", 10)
         self.declare_parameter("eps", 0.03)
         self.declare_parameter("obj_width", 0.03)
-        self.declare_parameter("box_width", 0.24)
-        self.declare_parameter("box_tolerance", 0.04)
+        self.declare_parameter("box_min_width", 0.09)
+        self.declare_parameter("box_max_width", 0.28)
         self.declare_parameter("obj_tolerance", 0.03)
         self.declare_parameter("buffer_size", 3)
         self.declare_parameter("max_general_counter", 10000)
@@ -60,8 +60,8 @@ class Detection(Node):
         self.eps = self.get_parameter("eps").value
         self.obj_width = self.get_parameter("obj_width").value
         self.obj_tolerance = self.get_parameter("obj_tolerance").value
-        self.box_width = self.get_parameter("box_width").value
-        self.box_tolerance = self.get_parameter("box_tolerance").value
+        self.box_min_width = self.get_parameter("box_min_width").value
+        self.box_max_width = self.get_parameter("box_max_width").value
         self.buffer_size = self.get_parameter("buffer_size").value
         self.max_general_counter = self.get_parameter("max_general_counter").value
 
@@ -415,7 +415,7 @@ class Detection(Node):
                 if not (self.obj_width - self.obj_tolerance < np.max(dims) < self.obj_width + self.obj_tolerance):
                     continue # Skip this cluster, it's too big/small
             if box: 
-                if not (self.box_width - self.box_tolerance< np.max(dims)< self.box_width + self.box_tolerance):
+                if not (self.box_min_width < np.max(dims)< self.box_max_width):
                     continue 
                 
             # Check 2: Density Check (Optional but recommended)
