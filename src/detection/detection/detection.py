@@ -39,8 +39,8 @@ class Detection(Node):
         self.declare_parameter("box_min_width", 0.09)
         self.declare_parameter("box_max_width", 0.28)
         self.declare_parameter("obj_tolerance", 0.03)
-        self.declare_parameter("buffer_size", 3)
-        self.declare_parameter("max_general_counter", 10000)
+        self.declare_parameter("buffer_size", 4)
+        self.declare_parameter("max_general_counter", 6000)
         self.declare_parameter("obstacle_distance_m", 0.15)
         self.declare_parameter("occupancy_threshold", 51) # threshold used for occupancy grid check
 
@@ -416,7 +416,8 @@ class Detection(Node):
                     continue # Skip this cluster, it's too big/small
             if box: 
                 if not (self.box_min_width < np.max(dims)< self.box_max_width):
-                    continue 
+                    self.get_logger().info(f'object is not the size of a box')
+                    continue # skip this cluster, its too big/small
                 
             # Check 2: Density Check (Optional but recommended)
             # If it's the right size but has only 15 points, it might be a ghost reflection
