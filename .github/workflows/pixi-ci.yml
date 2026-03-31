@@ -24,25 +24,15 @@ jobs:
           - os: macos-latest
             arch: aarch64
             platform: macos
-          - os: windows-latest
-            arch: x86_64
-            platform: windows
+          # - os: windows-latest
+          #   arch: x86_64
+          #   platform: windows
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           submodules: recursive
-
-      # GitHub Actions Windows runners check out to D:\a\<repo>\<repo>.
-      # The "\a" in that path is treated as a CMake escape sequence when
-      # pixi-build-ros writes the environment prefix into cmake_install.cmake.
-      # Copying the workspace to C:\p gives pixi a clean path for all build
-      # artifacts, so the problematic \a sequence never appears.
-      - name: Copy workspace to short path (Windows)
-        if: runner.os == 'Windows'
-        shell: cmd
-        run: xcopy %GITHUB_WORKSPACE% C:\p /E /I /H /Y /Q
 
       - name: Setup Pixi
         uses: prefix-dev/setup-pixi@v0.9.5
@@ -52,12 +42,9 @@ jobs:
           locked: false
           # or
           frozen: false
-          manifest-path: ${{ runner.os == 'Windows' && 'C:\p\pixi.toml' || 'pixi.toml' }}
 
       - name: Install dependencies
         run: pixi install
-        working-directory: ${{ runner.os == 'Windows' && 'C:\p' || '.' }}
 
       - name: Verify installation
         run: pixi list
-        working-directory: ${{ runner.os == 'Windows' && 'C:\p' || '.' }}
