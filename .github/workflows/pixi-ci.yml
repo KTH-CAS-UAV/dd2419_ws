@@ -6,7 +6,8 @@ on:
   pull_request:
     branches: [ main, dev ]
   schedule:
-    - cron: '0 2 * * *'  # Runs every night at 2 AM UTC
+    - cron: '0 5 * * *'  # Runs every night at 5 AM Swedish time
+      timezone: "Europe/Stockholm"
   workflow_dispatch:
 
 jobs:
@@ -29,7 +30,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
