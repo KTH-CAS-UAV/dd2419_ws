@@ -1,0 +1,46 @@
+name: Pixi CI
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+  schedule:
+    - cron: '0 2 * * *'  # Runs every night at 2 AM UTC
+  workflow_dispatch:
+
+jobs:
+  pixi-install:
+    name: Install with Pixi
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+            platform: linux
+          - os: macos-latest
+            arch: aarch64
+            platform: macos
+          - os: windows-latest
+            arch: x86_64
+            platform: windows
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Pixi
+        uses: prefix-dev/setup-pixi@v0.9.4
+        with:
+          pixi-version: v0.66.0
+          cache: false
+
+      - name: Install dependencies
+        run: pixi install
+
+      - name: Verify installation
+        run: pixi list
