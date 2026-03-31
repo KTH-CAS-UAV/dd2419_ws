@@ -34,14 +34,28 @@ jobs:
         with:
           submodules: recursive
 
+      # GitHub Actions Windows runners check out to D:\a\<repo>\<repo>.
+      # The "\a" in that path is treated as a CMake escape sequence when
+      # pixi-build-ros writes the environment prefix into cmake_install.cmake.
+      # Creating a junction at C:\p avoids the problematic path.
+      - name: Create short-path junction (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: mklink /J C:\p %GITHUB_WORKSPACE%
+
       - name: Setup Pixi
-        uses: prefix-dev/setup-pixi@v0.9.4
+        uses: prefix-dev/setup-pixi@v0.9.5
         with:
           pixi-version: v0.66.0
           cache: false
+          locked: false
+          # or
+          frozen: false
 
       - name: Install dependencies
         run: pixi install
+        working-directory: ${{ runner.os == 'Windows' && 'C:\p' || '.' }}
 
       - name: Verify installation
         run: pixi list
+        working-directory: ${{ runner.os == 'Windows' && 'C:\p' || '.' }}
